@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button"
+import Image from 'next/image'
 
 interface Game {
   id: string;
@@ -23,7 +24,7 @@ export function GameList({ games, onSelectGame, disabled }: GameListProps) {
           variant="outline"
           className="flex flex-col items-center p-2 h-auto aspect-square"
         >
-          <img src={game.icon} alt={game.name} className="w-12 h-12 mb-2" />
+          <Image src={game.icon} alt={game.name} width={48} height={48} className="mb-2" />
           <span className="text-xs">{game.name}</span>
         </Button>
       ))}

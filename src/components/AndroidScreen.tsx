@@ -1,13 +1,20 @@
 import { useEffect, useRef } from 'react';
-import { DeviceRendererFactory } from '@genymotion/device-web-player';
+import { DeviceRendererFactory, RendererSetupOptions } from '@genymotion/device-web-player';
 
 interface AndroidScreenProps {
   instanceAddress: string;
   instanceId: string;
 }
 
+// You might need to adjust this interface based on the actual structure
+interface PlayerInstance {
+  VM_communication: {
+    disconnect: () => void;
+  };
+}
+
 export function AndroidScreen({ instanceAddress, instanceId }: AndroidScreenProps) {
-  const playerInstanceRef = useRef<any>(null);
+  const playerInstanceRef = useRef<PlayerInstance | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -16,13 +23,12 @@ export function AndroidScreen({ instanceAddress, instanceId }: AndroidScreenProp
       return;
     }
 
-    const options = {
-      template: "renderer_partial",
-      paas: true,
+    const options: RendererSetupOptions = {
+      template: 'renderer_partial',
       gpsSpeedSupport: true,
       translateHomeKey: true,
       streamResolution: false,
-      fileUploadUrl: false,
+      fileUploadUrl: `wss://${instanceAddress}/fileupload/`,
       token: instanceId,
       microphone: true,
       baseband: true,
