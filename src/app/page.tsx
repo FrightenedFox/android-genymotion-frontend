@@ -1,59 +1,72 @@
 'use client';
 
-import { useEffect } from 'react';
-import { DeviceRendererFactory } from '@genymotion/device-web-player';
+import { useState } from 'react';
+import { AndroidScreen } from '@/components/AndroidScreen';
+import { GameList } from '@/components/GameList';
+import { Instructions } from '@/components/Instructions';
+import { useSession } from '@/app/hooks/useSession';
+import { Button } from "@/components/ui/button"
+
+const DUMMY_GAMES = [
+  { id: '1', name: 'Tetris', icon: '/favicon.ico' },
+  { id: '2', name: 'Snake', icon: '/favicon.ico' },
+  { id: '3', name: 'Pac-Man', icon: '/favicon.ico' },
+  { id: '4', name: 'Solitaire', icon: '/favicon.ico' },
+  { id: '5', name: 'Chess', icon: '/favicon.ico' },
+];
 
 export default function Home() {
-  useEffect(() => {
-    // Replace with your actual instance address and token
-    const webrtcAddress = 'wss://3.72.233.90';
-    const token = 'i-07cff442ac7f84da8';
+  const { sessionData, isLoading, closeSession } = useSession();
+  const [selectedGame, setSelectedGame] = useState<string | null>(null);
 
-    const container = document.getElementById('genymotion');
+  const handleGameSelect = (gameId: string) => {
+    setSelectedGame(gameId);
+  };
 
-    const options = {
-      template: "renderer_partial", // As per documentation
-      paas: true,
-      gpsSpeedSupport: true,
-      translateHomeKey: true,
-      streamResolution: false,
-      fileUploadUrl: 'wss://ec2-3-72-233-90.eu-central-1.compute.amazonaws.com/fileupload/',
-      token: token,
-      microphone: true,
-      baseband: true,
-      connectionFailedURL:
-        'https://www.genymotion.com/help/cloud-paas/iceconnectionstate-failed/',
-    };
-
-    let instance: any;
-    try { 
-      const deviceRendererFactory = new DeviceRendererFactory();
-      instance = deviceRendererFactory.setupRenderer(
-        container!,
-        webrtcAddress,
-        options,
-      );
-
-      // Clean up on unmount
-      const handleBeforeUnload = () => {
-        instance.destroy();
-      };
-
-      window.addEventListener('beforeunload', handleBeforeUnload);
-
-      return () => {
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-      };
-    } catch (e) {
-      console.error('Error while loading the device player:', e);
-    }
-  }, []);
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  }
 
   return (
-    <div>
-      {/* Optional: Include Google Maps API if you need GPS map positioning */}
-      {/* <Script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY" /> */}
-      <div id="genymotion" style={{ width: '100%', height: '100vh' }}></div>
+    <div className="flex flex-col h-screen">
+      <header className="p-4 bg-gray-100">
+        <h1 className="text-2xl font-bold">My Genymotion App</h1>
+      </header>
+
+      <main className="flex-grow p-4 overflow-auto">
+        {!selectedGame ? (
+          <>
+            <Instructions />
+            <GameList
+              games={DUMMY_GAMES}
+              onSelectGame={handleGameSelect}
+              disabled={!sessionData || sessionData.instance.ssl_configured !== true}
+            />
+          </>
+        ) : (
+          <AndroidScreen
+            instanceAddress={sessionData?.instance.secure_address || ''}
+            instanceId={sessionData?.instance.instance_id || ''}
+          />
+        )}
+      </main>
+
+      <footer className="p-4 bg-gray-100 flex justify-between items-center">
+        <Button
+          onClick={closeSession}
+          variant="destructive"
+        >
+          Close Session
+        </Button>
+        {selectedGame && (
+          <Button
+            onClick={() => setSelectedGame(null)}
+            variant="secondary"
+          >
+            Back to Games
+          </Button>
+        )}
+      </footer>
     </div>
   );
 }
