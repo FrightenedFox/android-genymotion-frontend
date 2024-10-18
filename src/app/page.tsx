@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AndroidScreen } from '@/components/AndroidScreen';
 import { GameList } from '@/components/GameList';
 import { Instructions } from '@/components/Instructions';
@@ -16,16 +16,36 @@ const DUMMY_GAMES = [
 ];
 
 export default function Home() {
-  const { sessionData, isLoading, closeSession } = useSession();
+  const { sessionData, isLoading, restartSession } = useSession();
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
 
+  useEffect(() => {
+    console.log("Current session data:", sessionData);
+  }, [sessionData]);
+
   const handleGameSelect = (gameId: string) => {
+    console.log("Game selected:", gameId);
     setSelectedGame(gameId);
   };
 
+  const handleRestartSession = async () => {
+    console.log("Restarting session...");
+    await restartSession();
+    setSelectedGame(null);
+  };
+
+  const handleDisconnect = () => {
+    console.log("Disconnecting from game...");
+    setSelectedGame(null);
+  };
+
   if (isLoading) {
+    console.log("Session is loading...");
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
   }
+
+  const isSessionValid = sessionData && sessionData.instance && sessionData.instance.ssl_configured === true;
+  console.log("Is session valid:", isSessionValid);
 
   return (
     <div className="flex flex-col h-screen">
@@ -40,7 +60,7 @@ export default function Home() {
             <GameList
               games={DUMMY_GAMES}
               onSelectGame={handleGameSelect}
-              disabled={!sessionData || sessionData.instance.ssl_configured !== true}
+              disabled={!isSessionValid}
             />
           </>
         ) : (
@@ -53,17 +73,17 @@ export default function Home() {
 
       <footer className="p-4 bg-gray-100 flex justify-between items-center">
         <Button
-          onClick={closeSession}
-          variant="destructive"
+          onClick={handleRestartSession}
+          variant="secondary"
         >
-          Close Session
+          Restart Session
         </Button>
         {selectedGame && (
           <Button
-            onClick={() => setSelectedGame(null)}
+            onClick={handleDisconnect}
             variant="secondary"
           >
-            Back to Games
+            Disconnect
           </Button>
         )}
       </footer>

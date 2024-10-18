@@ -13,7 +13,11 @@ export async function GET(
     const response = await fetch(`${API_URL}sessions/${sessionId}`, {
       headers: {
         "x-api-key": API_KEY!,
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
       },
+      cache: "no-store",
     });
 
     if (!response.ok) {
@@ -21,12 +25,16 @@ export async function GET(
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    
+    return NextResponse.json(data, {
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      },
+    });
   } catch (error) {
     console.error("Error fetching session status:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch session status" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch session status" }, { status: 500 });
   }
 }

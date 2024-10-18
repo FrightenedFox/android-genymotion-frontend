@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { DeviceRendererFactory } from '@genymotion/device-web-player';
 
 interface AndroidScreenProps {
@@ -7,8 +7,14 @@ interface AndroidScreenProps {
 }
 
 export function AndroidScreen({ instanceAddress, instanceId }: AndroidScreenProps) {
+  const playerInstanceRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const container = document.getElementById('genymotion');
+    if (!containerRef.current) {
+      console.error('Container element not found');
+      return;
+    }
 
     const options = {
       template: "renderer_partial",
@@ -16,33 +22,45 @@ export function AndroidScreen({ instanceAddress, instanceId }: AndroidScreenProp
       gpsSpeedSupport: true,
       translateHomeKey: true,
       streamResolution: false,
-      fileUploadUrl: `wss://${instanceAddress}/fileupload/`,
+      fileUploadUrl: false,
       token: instanceId,
       microphone: true,
       baseband: true,
       connectionFailedURL: 'https://www.genymotion.com/help/cloud-paas/iceconnectionstate-failed/',
     };
 
-    let instance: any;
     try {
       console.log('Setting up the device player...');
       const deviceRendererFactory = new DeviceRendererFactory();
-      instance = deviceRendererFactory.setupRenderer(
-        container!,
+      playerInstanceRef.current = deviceRendererFactory.setupRenderer(
+        containerRef.current,
         `wss://${instanceAddress}`,
         options,
       );
 
       // Clean up on unmount
       return () => {
-        // instance.destroy();
+        disconnectPlayer();
       };
     } catch (e) {
       console.error('Error while loading the device player:', e);
     }
   }, [instanceAddress, instanceId]);
 
+  const disconnectPlayer = () => {
+    if (playerInstanceRef.current && playerInstanceRef.current.VM_communication) {
+      console.log('Disconnecting from Genymotion instance...');
+      playerInstanceRef.current.VM_communication.disconnect();
+      playerInstanceRef.current = null;
+    }
+  };
+
   return (
-    <div id="genymotion" className="w-full h-full" />
+    <div>
+      <div ref={containerRef} className="w-full h-full" />
+      <button onClick={disconnectPlayer} className="mt-4 px-4 py-2 bg-red-500 text-white rounded">
+        Disconnect
+      </button>
+    </div>
   );
 }
