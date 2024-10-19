@@ -1,171 +1,197 @@
-import { useState, useEffect, useCallback } from "react";
-import Cookies from "js-cookie";
+// src/app/hooks/useSession.ts
 
-interface SessionData {
-  PK: string;
-  SK: string;
-  instance: {
-    instance_id: string;
-    instance_type: string;
-    instance_state: string;
-    instance_ip: string | null;
-    instance_aws_address: string | null;
-    ssl_configured: boolean;
-    secure_address: string | null;
-  };
-  user_ip: string;
-  browser_info: string;
-  start_time: string;
-  end_time: string | null;
-  last_accessed_on: string | null;
-}
+import { useState, useEffect, useCallback, useRef } from "react";
+import Cookies from "js-cookie";
+import { AMI, Session } from "@/types";
 
 const SESSION_COOKIE_NAME = "genymotion_session";
 const SESSION_TIMEOUT = 15 * 60 * 1000; // 15 minutes in milliseconds
-const INITIAL_DELAY = 5000; // 5 seconds delay after session creation
 
 export function useSession() {
-  const [sessionData, setSessionData] = useState<SessionData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [sessionData, setSessionData] = useState<Session | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [amis, setAmis] = useState<AMI[]>([]);
+  const [recommendedAmi, setRecommendedAmi] = useState<AMI | null>(null);
+  const [userIp, setUserIp] = useState<string>("");
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchSessionData = useCallback(async (sessionId: string): Promise<SessionData> => {
-    const response = await fetch(`/api/sessions/${sessionId}`, {
-      headers: {
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        "Pragma": "no-cache",
-      },
-      cache: "no-store",
-    });
+  // Fetch user IP on mount
+  useEffect(() => {
+    const fetchUserIp = async () => {
+      try {
+        const response = await fetch("/api/get-ip");
+        const data = await response.json();
+        setUserIp(data.ip);
+      } catch (err) {
+        console.error("Error fetching IP:", err);
+        setUserIp("Unknown");
+      }
+    };
+    fetchUserIp();
+  }, []);
 
+  // Fetch session data by session ID
+  const fetchSessionData = useCallback(async (sessionId: string): Promise<Session> => {
+    const response = await fetch(`/api/proxy?path=/sessions/${sessionId}`);
     if (!response.ok) {
       throw new Error("Failed to fetch session status");
     }
-
     return await response.json();
   }, []);
 
-  const createSession = useCallback(async () => {
-    console.log("Creating a new session...");
-    try {
-      const response = await fetch("/api/sessions/create", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache",
-        },
-        cache: "no-store",
-        body: JSON.stringify({
-          user_ip: "127.0.0.1", // Replace with actual user IP
-          browser_info: navigator.userAgent,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to create session");
+  // Start polling the session status
+  const startSessionPolling = useCallback(
+    (sessionId: string) => {
+      // Clear any existing polling
+      if (pollingRef.current) {
+        clearTimeout(pollingRef.current);
       }
 
-      const data: SessionData = await response.json();
-      console.log("New session created:", data);
-      setSessionData(data);
-      Cookies.set(SESSION_COOKIE_NAME, data.SK);
+      const poll = async () => {
+        try {
+          const data = await fetchSessionData(sessionId);
+          setSessionData(data);
 
-      console.log(`Waiting ${INITIAL_DELAY / 1000} seconds before verifying session...`);
-      await new Promise(resolve => setTimeout(resolve, INITIAL_DELAY));
-      await verifySession(data.SK);
+          if (data.instance && data.instance.instance_state === "running") {
+            // Once running, poll every 1 minute
+            pollingRef.current = setTimeout(poll, 60000);
+          } else {
+            // If not running, continue polling every 15 seconds
+            pollingRef.current = setTimeout(poll, 15000);
+          }
+        } catch (error) {
+          console.error("Error polling session:", error);
+          setError("Error polling session status.");
+          // Optionally stop polling on error
+          clearTimeout(pollingRef.current as NodeJS.Timeout);
+        }
+      };
+
+      // Start polling
+      poll();
+    },
+    [fetchSessionData]
+  );
+
+  // Create a new session
+  const createSession = useCallback(
+    async (amiId: string) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const selectedAmi = amis.find((ami) => ami.SK === amiId) || recommendedAmi;
+        if (!selectedAmi) {
+          throw new Error("Selected AMI not found");
+        }
+
+        const targetYear = selectedAmi.representing_year;
+        const response = await fetch(`/api/proxy?path=/sessions/${targetYear}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_ip: userIp,
+            browser_info: navigator.userAgent,
+          }),
+        });
+
+        // Log the response for debugging
+        console.log("Session creation response:", response);
+
+        if (response.status === 503) {
+          throw new Error("You have reached your EC2 vCPU limit. Please try again later.");
+        }
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to create session: ${response.status} ${response.statusText}. ${errorText}`);
+        }
+
+        const data: Session = await response.json();
+        setSessionData(data);
+        Cookies.set(SESSION_COOKIE_NAME, data.SK, { expires: 1 }); // Set cookie to expire in 1 day
+        startSessionPolling(data.SK);
+      } catch (error) {
+        console.error("Error in createSession:", error);
+        setError(error instanceof Error ? error.message : "An unknown error occurred");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [amis, recommendedAmi, userIp, startSessionPolling]
+  );
+
+  // Check for existing session on mount
+  const checkExistingSession = useCallback(async () => {
+    const sessionId = Cookies.get(SESSION_COOKIE_NAME);
+    if (sessionId) {
+      try {
+        const data = await fetchSessionData(sessionId);
+        const sessionAge = Date.now() - new Date(data.start_time).getTime();
+        if (
+          sessionAge < SESSION_TIMEOUT &&
+          data.instance &&
+          data.instance.instance_state === "running"
+        ) {
+          setSessionData(data);
+          startSessionPolling(sessionId);
+        } else {
+          // Session is too old or not running, remove the cookie
+          Cookies.remove(SESSION_COOKIE_NAME);
+        }
+      } catch (error) {
+        console.error("Error checking existing session:", error);
+        Cookies.remove(SESSION_COOKIE_NAME);
+      }
+    }
+  }, [fetchSessionData, startSessionPolling]);
+
+  // Fetch AMIs and Recommended AMI
+  const fetchAmis = useCallback(async () => {
+    try {
+      const response = await fetch("/api/proxy?path=/amis");
+      if (!response.ok) {
+        throw new Error("Failed to fetch AMIs");
+      }
+      const data: AMI[] = await response.json();
+      setAmis(data);
     } catch (error) {
-      console.error("Error creating session:", error);
-      setIsLoading(false);
+      console.error("Error fetching AMIs:", error);
     }
   }, []);
 
-  const verifySession = useCallback(async (sessionId: string) => {
-    console.log("Verifying session:", sessionId);
+  const fetchRecommendedAmi = useCallback(async () => {
     try {
-      const data = await fetchSessionData(sessionId);
-      console.log("Session data received:", data);
-
-      if (
-        !data.instance ||
-        data.instance.instance_state === "shutting-down" ||
-        data.instance.instance_state === "terminated"
-      ) {
-        console.log("Instance not running or shutting down, creating new session");
-        await createSession();
-      } else if (data.last_accessed_on) {
-        const lastAccessedTime = new Date(data.last_accessed_on + 'Z').getTime();
-        const currentTime = Date.now();
-
-        console.log("Last accessed time (UTC):", new Date(lastAccessedTime).toUTCString());
-        console.log("Current time (UTC):", new Date(currentTime).toUTCString());
-        console.log("Time difference:", (currentTime - lastAccessedTime) / 1000, "seconds");
-
-        if (currentTime - lastAccessedTime > SESSION_TIMEOUT) {
-          console.log("Session expired, creating new session");
-          await createSession();
-        } else {
-          console.log("Session valid, updating session data");
-          setSessionData(data);
-          setIsLoading(false);
-        }
-      } else {
-        console.log("No last_accessed_on, but instance running. Using session");
-        setSessionData(data);
-        setIsLoading(false);
+      const response = await fetch("/api/proxy?path=/amis/recommended");
+      if (!response.ok) {
+        throw new Error("Failed to fetch recommended AMI");
       }
+      const data: AMI = await response.json();
+      setRecommendedAmi(data);
     } catch (error) {
-      console.error("Error verifying session:", error);
-      console.log("Verification failed, creating new session");
-      await createSession();
+      console.error("Error fetching recommended AMI:", error);
     }
-  }, [createSession, fetchSessionData]);
-
-  const refreshSession = useCallback(async () => {
-    console.log("Refreshing session...");
-    const sessionId = Cookies.get(SESSION_COOKIE_NAME);
-    if (sessionId) {
-      await verifySession(sessionId);
-    } else {
-      console.log("No session cookie found, creating new session");
-      await createSession();
-    }
-  }, [verifySession, createSession]);
+  }, []);
 
   useEffect(() => {
-    console.log("Initializing session...");
-    refreshSession();
-  }, [refreshSession]);
-
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      console.log("Periodic session refresh");
-      refreshSession();
-    }, 15000); // Refresh session every minute
-
+    checkExistingSession();
+    fetchAmis();
+    fetchRecommendedAmi();
+    // Cleanup on unmount
     return () => {
-      console.log("Clearing session refresh interval");
-      clearInterval(intervalId);
-    };
-  }, [refreshSession]);
-
-  const restartSession = useCallback(async () => {
-    console.log("Restarting session...");
-    if (sessionData) {
-      try {
-        await fetch(`/api/sessions/${sessionData.SK}/end`, {
-          method: "POST",
-        });
-        console.log("Session ended, removing cookie");
-        Cookies.remove(SESSION_COOKIE_NAME);
-        await createSession();
-      } catch (error) {
-        console.error("Error restarting session:", error);
+      if (pollingRef.current) {
+        clearTimeout(pollingRef.current);
       }
-    } else {
-      console.log("No active session, creating new one");
-      await createSession();
-    }
-  }, [sessionData, createSession]);
+    };
+  }, [checkExistingSession, fetchAmis, fetchRecommendedAmi]);
 
-  return { sessionData, isLoading, restartSession };
+  return {
+    sessionData,
+    isLoading,
+    error,
+    amis,
+    recommendedAmi,
+    createSession,
+    setSessionData,
+  };
 }
