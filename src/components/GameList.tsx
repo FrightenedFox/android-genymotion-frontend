@@ -1,4 +1,4 @@
-// src/components/GameList.tsx
+"use client";
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,8 @@ export function GameList({
   isStartingGame,
   sessionReady,
 }: GameListProps) {
+  console.log("Rendering GameList");
+
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
 
   const handleImageError = (gameId: string) => {

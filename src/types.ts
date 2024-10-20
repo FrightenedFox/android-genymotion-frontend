@@ -1,27 +1,34 @@
-// src/types.ts
-
 export interface InstanceInfo {
   instance_id: string;
   instance_type: string;
   instance_state: string | null;
   instance_ip: string | null;
   instance_aws_address: string | null;
-  ssl_configured: boolean;
-  secure_address: string | null;
 }
 
 export interface Session {
   PK: string;
   SK: string;
   instance: InstanceInfo | null;
+  ssl_configured: boolean;
   ami_id: string;
   user_ip: string | null;
   browser_info: string | null;
   start_time: string;
   end_time: string | null;
-  last_accessed_on: string | null;
+  instance_active: boolean | null;
+  last_accessed_on: string | null; 
+  scheduled_for_deletion: boolean | null;
+}
+
+export interface SessionPing {
+  PK: string;
+  SK: string;
+  instance_active: boolean;
+  last_accessed_on: string;
   scheduled_for_deletion: boolean;
 }
+
 
 export interface AMI {
   PK: string;

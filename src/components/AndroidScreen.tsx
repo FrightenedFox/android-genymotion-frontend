@@ -1,4 +1,4 @@
-// src/components/AndroidScreen.tsx
+"use client";
 
 import { useEffect, useRef } from "react";
 import {
@@ -21,6 +21,8 @@ export function AndroidScreen({
   instanceAddress,
   instanceId,
 }: AndroidScreenProps) {
+  console.log("Rendering AndroidScreen");
+
   const playerInstanceRef = useRef<PlayerInstance | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -30,7 +32,6 @@ export function AndroidScreen({
       return;
     }
 
-    // Log instanceAddress and instanceId for debugging
     console.log("Instance Address:", instanceAddress);
     console.log("Instance ID:", instanceId);
 
@@ -70,20 +71,16 @@ export function AndroidScreen({
 
     // Clean up on unmount
     return () => {
-      disconnectPlayer();
+      if (
+        playerInstanceRef.current &&
+        playerInstanceRef.current.VM_communication
+      ) {
+        console.log("Disconnecting from Genymotion instance...");
+        playerInstanceRef.current.VM_communication.disconnect();
+        playerInstanceRef.current = null;
+      }
     };
   }, [instanceAddress, instanceId]);
-
-  const disconnectPlayer = () => {
-    if (
-      playerInstanceRef.current &&
-      playerInstanceRef.current.VM_communication
-    ) {
-      console.log("Disconnecting from Genymotion instance...");
-      playerInstanceRef.current.VM_communication.disconnect();
-      playerInstanceRef.current = null;
-    }
-  };
 
   return <div ref={containerRef} className="flex-grow relative min-h-0" />;
 }
