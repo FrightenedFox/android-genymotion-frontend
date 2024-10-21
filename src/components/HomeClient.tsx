@@ -23,7 +23,35 @@ import {
   fetchRecommendedGame,
   startGame,
   stopGame,
+  pingSession,
 } from "@/lib/server-actions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+// Define the ApiError interface
+interface ApiError {
+  status: number;
+  statusText: string;
+  errorText: string;
+}
+
+// Type guard to check if an error is of type ApiError
+function isApiError(err: unknown): err is ApiError {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "status" in err &&
+    "statusText" in err &&
+    "errorText" in err
+  );
+}
 
 interface HomeClientProps {
   amis: AMI[];
@@ -46,6 +74,14 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
 
   const [userIp, setUserIp] = useState<string>("");
 
+  const [gameTimer, setGameTimer] = useState<NodeJS.Timeout | null>(null);
+  const [showGameAlert, setShowGameAlert] = useState<boolean>(false);
+
+  // Sort AMIs in descending order
+  const sortedAmis = [...amis].sort(
+    (a, b) => b.representing_year - a.representing_year
+  );
+
   // Fetch user IP on mount
   useEffect(() => {
     console.log("Fetching user IP");
@@ -66,7 +102,12 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
       fetchSessionData(sessionId)
         .then((data) => {
           console.log("Fetched existing session data:", data);
-          setSessionData(data);
+          if (data.scheduled_for_deletion || data.end_time) {
+            console.log("Session is no longer active");
+            removeCookie("genymotion_session");
+          } else {
+            setSessionData(data);
+          }
         })
         .catch((err) => {
           console.error("Error fetching existing session data:", err);
@@ -86,12 +127,21 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
         try {
           const updatedSessionData = await fetchSessionData(sessionData.SK);
           console.log("Updated session data:", updatedSessionData);
-          setSessionData(updatedSessionData);
-
-          if (updatedSessionData.ssl_configured) {
-            // Session is ready, clear interval
-            console.log("Session is ready, stopping polling");
+          if (
+            updatedSessionData.scheduled_for_deletion ||
+            updatedSessionData.end_time
+          ) {
+            console.log("Session is no longer active");
+            removeCookie("genymotion_session");
+            setSessionData(null);
             clearInterval(intervalId);
+          } else {
+            setSessionData(updatedSessionData);
+            if (updatedSessionData.ssl_configured) {
+              // Session is ready, clear interval
+              console.log("Session is ready, stopping polling");
+              clearInterval(intervalId);
+            }
           }
         } catch (error) {
           console.error("Error fetching session data during polling:", error);
@@ -103,6 +153,31 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
     return () => {
       if (intervalId) {
         clearInterval(intervalId);
+      }
+    };
+  }, [sessionData, removeCookie]);
+
+  // Ping session every minute to keep it active
+  useEffect(() => {
+    let pingInterval: NodeJS.Timeout;
+
+    if (sessionData) {
+      // Start pinging every minute
+      console.log("Starting ping interval for session");
+      pingInterval = setInterval(async () => {
+        try {
+          await pingSession(sessionData.SK);
+          console.log("Session pinged successfully");
+        } catch (error) {
+          console.error("Error pinging session:", error);
+          // Optionally handle session expiration or other ping errors here
+        }
+      }, 60000); // 1 minute
+    }
+
+    return () => {
+      if (pingInterval) {
+        clearInterval(pingInterval);
       }
     };
   }, [sessionData]);
@@ -152,11 +227,52 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
       setCookie("genymotion_session", session.SK, { path: "/" });
     } catch (err) {
       console.error("Error creating session:", err);
-      setError(err instanceof Error ? err.message : "An unknown error occurred");
+      if (isApiError(err) && err.status === 503) {
+        setError(
+          "You have reached your EC2 vCPU limit. Unable to create more instances at this time. Please try again later or select a different year."
+        );
+      } else if (isApiError(err)) {
+        setError(err.errorText || "An unknown error occurred");
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An unknown error occurred");
+      }
     } finally {
       setIsLoading(false);
     }
   }, [amis, recommendedAmi, selectedAmi, userIp, setCookie]);
+
+  // Handle stopping the game
+  const handleStopGame = useCallback(async () => {
+    if (!sessionData) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await stopGame(sessionData.SK);
+      console.log("Game stopped");
+      setSelectedGame(null);
+
+      // Clear the game timernpm
+      if (gameTimer) {
+        clearTimeout(gameTimer);
+        setGameTimer(null);
+      }
+    } catch (err) {
+      console.error("Error stopping game:", err);
+      if (isApiError(err)) {
+        setError(err.errorText || "An unknown error occurred");
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An unknown error occurred");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sessionData, gameTimer]);
 
   // Handle game selection
   const handleGameSelect = useCallback(
@@ -170,34 +286,33 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
         await startGame(sessionData.SK, game.SK);
         console.log("Game started:", game);
         setSelectedGame(game);
+
+        // Start 15-minute timer
+        if (gameTimer) {
+          clearTimeout(gameTimer);
+        }
+        const timer = setTimeout(() => {
+          // Stop the game after 15 minutes
+          handleStopGame();
+          setShowGameAlert(true);
+        }, 15 * 60 * 1000); // 15 minutes
+
+        setGameTimer(timer);
       } catch (err) {
         console.error("Error starting game:", err);
-        setError(err instanceof Error ? err.message : "An unknown error occurred");
+        if (isApiError(err)) {
+          setError(err.errorText || "An unknown error occurred");
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("An unknown error occurred");
+        }
       } finally {
         setIsStartingGame(false);
       }
     },
-    [sessionData]
+    [sessionData, gameTimer, handleStopGame]
   );
-
-  // Handle stopping the game
-  const handleStopGame = useCallback(async () => {
-    if (!sessionData) return;
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      await stopGame(sessionData.SK);
-      console.log("Game stopped");
-      setSelectedGame(null);
-    } catch (err) {
-      console.error("Error stopping game:", err);
-      setError(err instanceof Error ? err.message : "An unknown error occurred");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [sessionData]);
 
   // Handle changing the session
   const handleChangeSession = useCallback(async () => {
@@ -218,7 +333,13 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
       await handleStartSession();
     } catch (err) {
       console.error("Error changing session:", err);
-      setError(err instanceof Error ? err.message : "An unknown error occurred");
+      if (isApiError(err)) {
+        setError(err.errorText || "An unknown error occurred");
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An unknown error occurred");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -226,6 +347,15 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
 
   // Disable buttons until session is fully initialized
   const isSessionReady = sessionData?.ssl_configured;
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (gameTimer) {
+        clearTimeout(gameTimer);
+      }
+    };
+  }, [gameTimer]);
 
   return (
     <div className="flex flex-col h-screen">
@@ -248,7 +378,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
                       Recommended ({recommendedAmi.representing_year})
                     </SelectItem>
                   )}
-                  {amis.map((ami) => (
+                  {sortedAmis.map((ami) => (
                     <SelectItem key={ami.SK} value={ami.SK}>
                       {ami.representing_year}
                     </SelectItem>
@@ -267,9 +397,12 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
         ) : !selectedGame ? (
           <>
             {!isSessionReady ? (
-              <div className="flex items-center justify-center h-full">
-                <Loader2 className="mr-2 h-8 w-8 animate-spin" />
-                <span>Initializing Session...</span>
+              <div className="p-4 overflow-auto">
+                <Instructions />
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="mr-2 h-8 w-8 animate-spin" />
+                  <span>Initializing Session...</span>
+                </div>
               </div>
             ) : (
               <div className="p-4 overflow-auto">
@@ -286,7 +419,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
         ) : (
           <AndroidScreen
             instanceAddress={`${sessionData.SK}.session.morskyi.org` || ""}
-            instanceId={sessionData.instance_id || ""}
+            instanceId={sessionData.instance.instance_id || ""}
           />
         )}
       </main>
@@ -305,7 +438,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
                       Recommended ({recommendedAmi.representing_year})
                     </SelectItem>
                   )}
-                  {amis.map((ami) => (
+                  {sortedAmis.map((ami) => (
                     <SelectItem key={ami.SK} value={ami.SK}>
                       {ami.representing_year}
                     </SelectItem>
@@ -335,6 +468,25 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
           </>
         )}
       </footer>
+
+      {showGameAlert && (
+        <AlertDialog open={showGameAlert} onOpenChange={setShowGameAlert}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Time&apos;s Up!</AlertDialogTitle>
+              <AlertDialogDescription>
+                You&apos;ve been playing this game for 15 minutes. Please try
+                playing another game.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogAction onClick={() => setShowGameAlert(false)}>
+                OK
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }

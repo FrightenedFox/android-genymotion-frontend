@@ -24,9 +24,12 @@ async function apiFetch(path: string, options: RequestInit = {}) {
       `API request failed: ${response.status} ${response.statusText}`,
       errorText
     );
-    throw new Error(
-      `API request failed: ${response.status} ${response.statusText}`
-    );
+    // Throw an error object with status and message
+    throw {
+      status: response.status,
+      statusText: response.statusText,
+      errorText: errorText,
+    };
   }
 
   const data = await response.json();
@@ -89,4 +92,9 @@ export async function startGame(
 export async function stopGame(sessionId: string): Promise<void> {
   console.log(`Stopping game for session ${sessionId} (server-side)`);
   await apiFetch(`/sessions/${sessionId}/games/stop`, { method: "POST" });
+}
+
+export async function pingSession(sessionId: string): Promise<void> {
+  console.log(`Pinging session ${sessionId} (server-side)`);
+  await apiFetch(`/sessions/${sessionId}/ping`);
 }
