@@ -255,7 +255,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
       console.log("Game stopped");
       setSelectedGame(null);
 
-      // Clear the game timernpm
+      // Clear the game timer
       if (gameTimer) {
         clearTimeout(gameTimer);
         setGameTimer(null);
@@ -392,14 +392,20 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
                 Start Session
               </Button>
             </div>
-            {error && <p className="text-red-500">{error}</p>}
+            {isLoading && (
+              <div className="flex items-center justify-center mt-4">
+                <Loader2 className="mr-2 h-6 w-6 animate-spin" />
+                <span>Loading...</span>
+              </div>
+            )}
+            {error && <p className="text-red-500 mt-4">{error}</p>}
           </div>
         ) : !selectedGame ? (
           <>
             {!isSessionReady ? (
               <div className="p-4 overflow-auto">
                 <Instructions />
-                <div className="flex items-center justify-center h-full">
+                <div className="flex items-center justify-center h-full mt-4">
                   <Loader2 className="mr-2 h-8 w-8 animate-spin" />
                   <span>Initializing Session...</span>
                 </div>
