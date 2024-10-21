@@ -359,6 +359,11 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
   // Disable buttons until session is fully initialized
   const isSessionReady = sessionData?.ssl_configured;
 
+  // Extract AMI Year from sessionData
+  const amiYear = sessionData
+    ? amis.find((ami) => ami.SK === sessionData.ami_id)?.representing_year
+    : null;
+
   // Cleanup on component unmount
   useEffect(() => {
     return () => {
@@ -370,8 +375,53 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
 
   return (
     <div className="flex flex-col h-screen">
-      <header className="p-4 bg-gray-100">
-        <h1 className="text-2xl font-bold">Android Game Tester</h1>
+      <header className="p-4 bg-gray-100 flex-col justify-between items-center">
+        <h1 className="text-2xl font-bold mb-4 mt-4">
+          Android Game Tester
+          {amiYear ? `: current session - ${amiYear}` : ""}
+        </h1>
+        {sessionData && (
+          <>
+            <div className="flex space-x-4">
+              <Select value={selectedAmi} onValueChange={setSelectedAmi}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Select Year" />
+                </SelectTrigger>
+                <SelectContent>
+                  {recommendedAmi && (
+                    <SelectItem value="recommended">
+                      Recommended ({recommendedAmi.representing_year})
+                    </SelectItem>
+                  )}
+                  {sortedAmis.map((ami) => (
+                    <SelectItem key={ami.SK} value={ami.SK}>
+                      {ami.representing_year}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={handleChangeSession}
+                variant="secondary"
+                disabled={isLoading || !isSessionReady}
+              >
+                {isLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Change Session
+              </Button>
+            </div>
+            {selectedGame && (
+              <Button
+                onClick={handleStopGame}
+                variant="secondary"
+                disabled={isLoading}
+              >
+                Stop Game
+              </Button>
+            )}
+          </>
+        )}
       </header>
 
       <main className="flex-grow overflow-hidden flex flex-col">
@@ -440,51 +490,6 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
           />
         )}
       </main>
-
-      <footer className="p-4 bg-gray-100 flex justify-between items-center">
-        {sessionData && (
-          <>
-            <div className="flex space-x-4">
-              <Select value={selectedAmi} onValueChange={setSelectedAmi}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Select Year" />
-                </SelectTrigger>
-                <SelectContent>
-                  {recommendedAmi && (
-                    <SelectItem value="recommended">
-                      Recommended ({recommendedAmi.representing_year})
-                    </SelectItem>
-                  )}
-                  {sortedAmis.map((ami) => (
-                    <SelectItem key={ami.SK} value={ami.SK}>
-                      {ami.representing_year}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                onClick={handleChangeSession}
-                variant="secondary"
-                disabled={isLoading || !isSessionReady}
-              >
-                {isLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Change Session
-              </Button>
-            </div>
-            {selectedGame && (
-              <Button
-                onClick={handleStopGame}
-                variant="secondary"
-                disabled={isLoading}
-              >
-                Stop Game
-              </Button>
-            )}
-          </>
-        )}
-      </footer>
 
       {showGameAlert && (
         <AlertDialog open={showGameAlert} onOpenChange={setShowGameAlert}>
