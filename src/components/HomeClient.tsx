@@ -347,7 +347,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
 
   // Disable buttons until session is fully initialized
   const isSessionReady = sessionData?.ssl_configured;
-
+  
   // Cleanup on component unmount
   useEffect(() => {
     return () => {
@@ -395,7 +395,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
             {isLoading && (
               <div className="flex items-center justify-center mt-4">
                 <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-                <span>Loading...</span>
+                <span>Initializing Session (2-5 minutes)...</span>
               </div>
             )}
             {error && <p className="text-red-500 mt-4">{error}</p>}
@@ -405,9 +405,9 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
             {!isSessionReady ? (
               <div className="p-4 overflow-auto">
                 <Instructions />
-                <div className="flex items-center justify-center h-full mt-4">
+                <div className="flex items-center justify-center mt-4">
                   <Loader2 className="mr-2 h-8 w-8 animate-spin" />
-                  <span>Initializing Session...</span>
+                  <span>Initializing Session (2-5 minutes)...</span>
                 </div>
               </div>
             ) : (
