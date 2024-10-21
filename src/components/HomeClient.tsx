@@ -35,24 +35,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-// Define the ApiError interface
-interface ApiError {
-  status: number;
-  statusText: string;
-  errorText: string;
-}
-
-// Type guard to check if an error is of type ApiError
-function isApiError(err: unknown): err is ApiError {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "status" in err &&
-    "statusText" in err &&
-    "errorText" in err
-  );
-}
-
 interface HomeClientProps {
   amis: AMI[];
   recommendedAmi: AMI;
@@ -100,13 +82,22 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
     if (sessionId) {
       console.log("Found existing session ID in cookies:", sessionId);
       fetchSessionData(sessionId)
-        .then((data) => {
-          console.log("Fetched existing session data:", data);
-          if (data.scheduled_for_deletion || data.end_time) {
-            console.log("Session is no longer active");
-            removeCookie("genymotion_session");
+        .then((result) => {
+          if (result.success && result.data) {
+            const data = result.data;
+            console.log("Fetched existing session data:", data);
+            if (data.scheduled_for_deletion || data.end_time) {
+              console.log("Session is no longer active");
+              removeCookie("genymotion_session");
+            } else {
+              setSessionData(data);
+            }
           } else {
-            setSessionData(data);
+            console.error(
+              "Error fetching existing session data:",
+              result.error
+            );
+            removeCookie("genymotion_session");
           }
         })
         .catch((err) => {
@@ -125,23 +116,31 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
       console.log("Starting polling for sessionData updates");
       intervalId = setInterval(async () => {
         try {
-          const updatedSessionData = await fetchSessionData(sessionData.SK);
-          console.log("Updated session data:", updatedSessionData);
-          if (
-            updatedSessionData.scheduled_for_deletion ||
-            updatedSessionData.end_time
-          ) {
-            console.log("Session is no longer active");
-            removeCookie("genymotion_session");
-            setSessionData(null);
-            clearInterval(intervalId);
-          } else {
-            setSessionData(updatedSessionData);
-            if (updatedSessionData.ssl_configured) {
-              // Session is ready, clear interval
-              console.log("Session is ready, stopping polling");
+          const result = await fetchSessionData(sessionData.SK);
+          if (result.success && result.data) {
+            const updatedSessionData = result.data;
+            console.log("Updated session data:", updatedSessionData);
+            if (
+              updatedSessionData.scheduled_for_deletion ||
+              updatedSessionData.end_time
+            ) {
+              console.log("Session is no longer active");
+              removeCookie("genymotion_session");
+              setSessionData(null);
               clearInterval(intervalId);
+            } else {
+              setSessionData(updatedSessionData);
+              if (updatedSessionData.ssl_configured) {
+                // Session is ready, clear interval
+                console.log("Session is ready, stopping polling");
+                clearInterval(intervalId);
+              }
             }
+          } else {
+            console.error(
+              "Error fetching session data during polling:",
+              result.error
+            );
           }
         } catch (error) {
           console.error("Error fetching session data during polling:", error);
@@ -166,8 +165,13 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
       console.log("Starting ping interval for session");
       pingInterval = setInterval(async () => {
         try {
-          await pingSession(sessionData.SK);
-          console.log("Session pinged successfully");
+          const result = await pingSession(sessionData.SK);
+          if (result.success) {
+            console.log("Session pinged successfully");
+          } else {
+            console.error("Error pinging session:", result.error);
+            // Optionally handle session expiration or other ping errors here
+          }
         } catch (error) {
           console.error("Error pinging session:", error);
           // Optionally handle session expiration or other ping errors here
@@ -187,16 +191,24 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
     if (sessionData?.ami_id) {
       console.log("Fetching games for AMI ID:", sessionData.ami_id);
       fetchGames(sessionData.ami_id)
-        .then((games) => {
-          setGames(games);
-          console.log("Fetched games:", games);
+        .then((result) => {
+          if (result.success && result.data) {
+            setGames(result.data);
+            console.log("Fetched games:", result.data);
+          } else {
+            console.error("Error fetching games:", result.error);
+          }
         })
         .catch((err) => console.error("Error fetching games:", err));
 
       fetchRecommendedGame(sessionData.ami_id)
-        .then((game) => {
-          setRecommendedGame(game);
-          console.log("Fetched recommended game:", game);
+        .then((result) => {
+          if (result.success && result.data) {
+            setRecommendedGame(result.data);
+            console.log("Fetched recommended game:", result.data);
+          } else {
+            console.error("Error fetching recommended game:", result.error);
+          }
         })
         .catch((err) => console.error("Error fetching recommended game:", err));
     }
@@ -221,23 +233,25 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
     const year = selectedAmiObj.representing_year;
 
     try {
-      const session = await createSession(year, userIp, navigator.userAgent);
-      console.log("Session created:", session);
-      setSessionData(session);
-      setCookie("genymotion_session", session.SK, { path: "/" });
-    } catch (err) {
-      console.error("Error creating session:", err);
-      if (isApiError(err) && err.status === 503) {
-        setError(
-          "You have reached your EC2 vCPU limit. Unable to create more instances at this time. Please try again later or select a different year."
-        );
-      } else if (isApiError(err)) {
-        setError(err.errorText || "An unknown error occurred");
-      } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("An unknown error occurred");
+      const result = await createSession(year, userIp, navigator.userAgent);
+      if (result.success && result.data) {
+        const session = result.data;
+        console.log("Session created:", session);
+        setSessionData(session);
+        setCookie("genymotion_session", session.SK, { path: "/" });
+      } else if (result.error) {
+        console.error("Error creating session:", result.error);
+        if (result.error.includes("EC2 vCPU limit")) {
+          setError(
+            "You have reached your EC2 vCPU limit. Unable to create more instances at this time. Please try again later or select a different year."
+          );
+        } else {
+          setError(result.error || "An unknown error occurred");
+        }
       }
+    } catch (err) {
+      console.error("Unexpected error creating session:", err);
+      setError("An unknown error occurred");
     } finally {
       setIsLoading(false);
     }
@@ -251,24 +265,23 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
     setError(null);
 
     try {
-      await stopGame(sessionData.SK);
-      console.log("Game stopped");
-      setSelectedGame(null);
+      const result = await stopGame(sessionData.SK);
+      if (result.success) {
+        console.log("Game stopped");
+        setSelectedGame(null);
 
-      // Clear the game timer
-      if (gameTimer) {
-        clearTimeout(gameTimer);
-        setGameTimer(null);
+        // Clear the game timer
+        if (gameTimer) {
+          clearTimeout(gameTimer);
+          setGameTimer(null);
+        }
+      } else {
+        console.error("Error stopping game:", result.error);
+        setError(result.error || "An unknown error occurred");
       }
     } catch (err) {
-      console.error("Error stopping game:", err);
-      if (isApiError(err)) {
-        setError(err.errorText || "An unknown error occurred");
-      } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("An unknown error occurred");
-      }
+      console.error("Unexpected error stopping game:", err);
+      setError("An unknown error occurred");
     } finally {
       setIsLoading(false);
     }
@@ -283,30 +296,29 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
       setError(null);
 
       try {
-        await startGame(sessionData.SK, game.SK);
-        console.log("Game started:", game);
-        setSelectedGame(game);
+        const result = await startGame(sessionData.SK, game.SK);
+        if (result.success) {
+          console.log("Game started:", game);
+          setSelectedGame(game);
 
-        // Start 15-minute timer
-        if (gameTimer) {
-          clearTimeout(gameTimer);
-        }
-        const timer = setTimeout(() => {
-          // Stop the game after 15 minutes
-          handleStopGame();
-          setShowGameAlert(true);
-        }, 15 * 60 * 1000); // 15 minutes
+          // Start 15-minute timer
+          if (gameTimer) {
+            clearTimeout(gameTimer);
+          }
+          const timer = setTimeout(() => {
+            // Stop the game after 15 minutes
+            handleStopGame();
+            setShowGameAlert(true);
+          }, 15 * 60 * 1000); // 15 minutes
 
-        setGameTimer(timer);
-      } catch (err) {
-        console.error("Error starting game:", err);
-        if (isApiError(err)) {
-          setError(err.errorText || "An unknown error occurred");
-        } else if (err instanceof Error) {
-          setError(err.message);
+          setGameTimer(timer);
         } else {
-          setError("An unknown error occurred");
+          console.error("Error starting game:", result.error);
+          setError(result.error || "An unknown error occurred");
         }
+      } catch (err) {
+        console.error("Unexpected error starting game:", err);
+        setError("An unknown error occurred");
       } finally {
         setIsStartingGame(false);
       }
@@ -322,24 +334,23 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
     setError(null);
 
     try {
-      await endSession(sessionData.SK);
-      console.log("Session ended");
-      removeCookie("genymotion_session");
-      setSessionData(null);
-      setSelectedGame(null);
-      setGames([]);
-      setRecommendedGame(null);
+      const result = await endSession(sessionData.SK);
+      if (result.success) {
+        console.log("Session ended");
+        removeCookie("genymotion_session");
+        setSessionData(null);
+        setSelectedGame(null);
+        setGames([]);
+        setRecommendedGame(null);
 
-      await handleStartSession();
-    } catch (err) {
-      console.error("Error changing session:", err);
-      if (isApiError(err)) {
-        setError(err.errorText || "An unknown error occurred");
-      } else if (err instanceof Error) {
-        setError(err.message);
+        await handleStartSession();
       } else {
-        setError("An unknown error occurred");
+        console.error("Error changing session:", result.error);
+        setError(result.error || "An unknown error occurred");
       }
+    } catch (err) {
+      console.error("Unexpected error changing session:", err);
+      setError("An unknown error occurred");
     } finally {
       setIsLoading(false);
     }
@@ -347,7 +358,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
 
   // Disable buttons until session is fully initialized
   const isSessionReady = sessionData?.ssl_configured;
-  
+
   // Cleanup on component unmount
   useEffect(() => {
     return () => {
@@ -424,7 +435,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
           </>
         ) : (
           <AndroidScreen
-            instanceAddress={`${sessionData.SK}.session.morskyi.org` || ""}
+            instanceAddress={`${sessionData.SK}.session.morskyi.net` || ""}
             instanceId={sessionData.instance.instance_id || ""}
           />
         )}

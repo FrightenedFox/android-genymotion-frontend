@@ -1,3 +1,10 @@
+export interface ApiResult<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+
 export interface InstanceInfo {
   instance_id: string;
   instance_type: string;

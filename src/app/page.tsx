@@ -15,7 +15,7 @@ export default async function Home() {
 
   return (
     <Suspense fallback={<div>Loading...</div>}>
-      <HomeClient amis={amis} recommendedAmi={recommendedAmi} />
+      <HomeClient amis={amis.data} recommendedAmi={recommendedAmi.data} />
     </Suspense>
   );
 }
