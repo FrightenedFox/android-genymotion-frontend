@@ -375,16 +375,17 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
 
   return (
     <div className="flex flex-col h-screen">
-      <header className="p-4 bg-gray-100 flex-col justify-between items-center">
-        <h1 className="text-2xl font-bold mb-4 mt-4">
+      <header className="p-4 bg-gray-100">
+        <h1 className="text-2xl font-bold mb-4 mt-4 text-center">
           Android Game Tester
-          {amiYear ? `: current session - ${amiYear}` : ""}
+          {amiYear ? `: Current Session - ${amiYear}` : ""}
         </h1>
         {sessionData && (
-          <>
-            <div className="flex space-x-4">
+          <div className="flex justify-start items-center">
+            {/* Left Section: Change Session and Selector */}
+            <div className="flex items-center space-x-2">
               <Select value={selectedAmi} onValueChange={setSelectedAmi}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="border border-gray-300">
                   <SelectValue placeholder="Select Year" />
                 </SelectTrigger>
                 <SelectContent>
@@ -405,22 +406,24 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
                 variant="secondary"
                 disabled={isLoading || !isSessionReady}
               >
-                {isLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Change Session
               </Button>
             </div>
-            {selectedGame && (
-              <Button
-                onClick={handleStopGame}
-                variant="secondary"
-                disabled={isLoading}
-              >
-                Stop Game
-              </Button>
-            )}
-          </>
+
+            {/* Right Section: Back to Games and Stop Game */}
+            <div className="flex items-center space-x-2">
+              {selectedGame && (
+                <Button
+                  onClick={handleStopGame}
+                  variant="default"
+                  disabled={isLoading}
+                >
+                  Stop Game
+                </Button>
+              )}
+            </div>
+          </div>
         )}
       </header>
 
