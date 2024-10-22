@@ -156,7 +156,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
     };
   }, [sessionData, removeCookie]);
 
-  // Ping session every minute to keep it active
+  // Ping session and update cookie every minute to keep it active
   useEffect(() => {
     let pingInterval: NodeJS.Timeout;
 
@@ -168,6 +168,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
           const result = await pingSession(sessionData.SK);
           if (result.success) {
             console.log("Session pinged successfully");
+            setCookie("genymotion_session", sessionData.SK, { path: "/" });
           } else {
             console.error("Error pinging session:", result.error);
             // Optionally handle session expiration or other ping errors here
@@ -184,7 +185,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
         clearInterval(pingInterval);
       }
     };
-  }, [sessionData]);
+  }, [sessionData, setCookie]);
 
   // Fetch games when sessionData changes
   useEffect(() => {
