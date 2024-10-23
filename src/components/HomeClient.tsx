@@ -489,7 +489,7 @@ export default function HomeClient({ amis, recommendedAmi }: HomeClientProps) {
           </>
         ) : (
           <AndroidScreen
-            instanceAddress={`${sessionData.SK}.session.morskyi.net` || ""}
+            instanceAddress={`${sessionData.SK}.session.krupina.me` || ""}
             instanceId={sessionData.instance.instance_id || ""}
           />
         )}
