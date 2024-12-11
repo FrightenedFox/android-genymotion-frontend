@@ -1,3 +1,5 @@
+export const revalidate = 0; // Disable caching entirely
+
 import { Suspense } from "react";
 import { getAmis, getRecommendedAmi } from "@/lib/server-actions";
 import HomeClient from "@/components/HomeClient";
